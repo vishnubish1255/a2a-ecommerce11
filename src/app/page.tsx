@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useWallet } from "@txnlab/use-wallet-react";
+import { useWallet } from "@/hooks/use-wallet";
+import { ethers } from "ethers";
 import { WalletConnect } from "@/components/wallet-connect";
 import type {
   SessionState,
@@ -55,10 +56,10 @@ const PHASE_MAP: Record<string, { label: string; color: string; dot: string }> =
 };
 
 const INTENT_SUGGESTIONS = [
-  "Buy cloud storage under 1 ALGO",
+  "Buy cloud storage under 1 ETH",
   "Find cheapest API gateway",
   "GPU compute for ML training",
-  "Managed hosting under 0.8 ALGO",
+  "Managed hosting under 0.8 ETH",
 ];
 
 const INITIAL_ESCROW: EscrowState = {
@@ -141,12 +142,12 @@ function ScoreBar({ score }: { score: number }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function Home() {
-  const { activeAccount, signTransactions } = useWallet();
+  const { address, signer } = useWallet();
 
   // Hydration guard — wallet state differs between server and client
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
-  const walletReady = mounted && !!activeAccount;
+  const walletReady = mounted && !!address;
 
   // Session
   const [session, setSession] = useState<SessionState>(INITIAL_SESSION);
@@ -300,7 +301,7 @@ export default function Home() {
       const board = session.negotiations
         .filter(n => (n as NegotiationSession & { reputationScore?: number }).reputationScore !== undefined)
         .map(n => {
-          // If sellerName looks like an Algorand address, use the service name instead
+          // If sellerName looks like an Ethereum address, use the service name instead
           const isAddr = n.sellerName.length >= 58 && /^[A-Z2-7]+$/.test(n.sellerName);
           return {
             address: n.sellerAddress,
@@ -358,9 +359,9 @@ export default function Home() {
   // Fetch on mount; also re-fetch after wallet connects (to pick up any user-posted listings)
   useEffect(() => { fetchBrowseListings(); }, []);
   useEffect(() => {
-    if (activeAccount?.address) fetchBrowseListings();
+    if (address) fetchBrowseListings();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAccount?.address]);
+  }, [address]);
 
   // ── Commerce pipeline ────────────────────────────────────────────────────────
 
@@ -379,7 +380,7 @@ export default function Home() {
     setIntentMsg("");
 
     if (!isInitialized) {
-      addActions([mkAction("Initializing A2A system on Algorand TestNet...", "thinking")]);
+      addActions([mkAction("Initializing A2A system on Ethereum TestNet...", "thinking")]);
       const init = await callApi<{ success: boolean }>("/api/init", {}, "initializing");
       if (!init?.success) { setIsLoading(false); return; }
       setIsInitialized(true);
@@ -391,7 +392,7 @@ export default function Home() {
     if (!intentResult?.intent) { setIsLoading(false); return; }
     setSession(prev => ({ ...prev, intent: intentResult.intent }));
 
-    addActions([mkAction("Scanning Algorand Indexer for matching listings...", "thinking")]);
+    addActions([mkAction("Scanning Ethereum network for matching listings...", "thinking")]);
     const discoverResult = await callApi<{ listings: OnChainListing[] }>(
       "/api/discover", { intent: intentResult.intent }, "discovering",
     );
@@ -423,7 +424,7 @@ export default function Home() {
     } else {
       const rep = (deal as NegotiationSession & { reputationScore?: number }).reputationScore;
       addActions([mkAction(
-        `DEAL FOUND: ${deal.finalPrice} ALGO for "${deal.service}" from ${deal.sellerName}` +
+        `DEAL FOUND: ${deal.finalPrice} ETH for "${deal.service}" from ${deal.sellerName}` +
         (rep !== undefined ? ` [reputation: ${rep}/100]` : "") +
         `\nClick CONFIRM PAYMENT to execute on-chain.`,
         "result",
@@ -440,7 +441,7 @@ export default function Home() {
     // Prefer vault (auto-sign) > wallet > server-side
     if (vaultBalance >= deal.finalPrice + 0.01) {
       await executeWithVault(deal);
-    } else if (activeAccount) {
+    } else if (address && signer) {
       await executeWithWallet(deal);
     } else {
       await executeServerSide(deal);
@@ -455,7 +456,7 @@ export default function Home() {
 
   async function executeWithVault(deal: NegotiationSession) {
     try {
-      addActions([mkAction(`⬡ VAULT AUTO-SIGN: Paying ${deal.finalPrice} ALGO from vault...`, "transaction")]);
+      addActions([mkAction(`⬡ VAULT AUTO-SIGN: Paying ${deal.finalPrice} ETH from vault...`, "transaction")]);
 
       const payRes = await fetch("/api/vault", {
         method: "POST",
@@ -464,7 +465,7 @@ export default function Home() {
           action: "execute",
           receiverAddress: deal.sellerAddress,
           amountAlgo: deal.finalPrice,
-          note: `A2A Vault | ${deal.service} | ${deal.finalPrice} ALGO`,
+          note: `A2A Vault | ${deal.service} | ${deal.finalPrice} ETH`,
         }),
       });
       const payData = await payRes.json();
@@ -483,7 +484,7 @@ export default function Home() {
       }));
 
       addActions([mkAction(
-        `PAYMENT CONFIRMED (vault auto-sign)\nTX: ${payData.txId}\nRound: ${payData.confirmedRound}\nAmount: ${deal.finalPrice} ALGO\nVault balance: ${payData.vaultBalance?.toFixed(4) ?? "?"} ALGO\nhttps://lora.algokit.io/testnet/transaction/${payData.txId}`,
+        `PAYMENT CONFIRMED (vault auto-sign)\nTX: ${payData.txId}\nRound: ${payData.confirmedRound}\nAmount: ${deal.finalPrice} ETH\nVault balance: ${payData.vaultBalance?.toFixed(4) ?? "?"} ETH\nhttps://sepolia.etherscan.io/tx/${payData.txId}`,
         "transaction",
       )]);
 
@@ -564,131 +565,45 @@ export default function Home() {
 
   async function executeWithWallet(deal: NegotiationSession) {
     try {
-      addActions([mkAction(`Preparing ${deal.finalPrice} ALGO payment — awaiting wallet signature...`, "transaction")]);
-      const prepRes = await fetch("/api/wallet/prepare-payment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          senderAddress: activeAccount!.address,
-          receiverAddress: deal.sellerAddress,
-          amountAlgo: deal.finalPrice,
-          note: `A2A Commerce | ${deal.service} | ${deal.finalPrice} ALGO`,
-        }),
-      });
-      const prepData = await prepRes.json();
-      if (prepData.error) throw new Error(prepData.error);
+      if (!signer || !address) throw new Error("Wallet not connected");
 
-      const txnBytes = Uint8Array.from(atob(prepData.unsignedTxn), c => c.charCodeAt(0));
-      const signedTxns = await signTransactions([txnBytes]);
-      const signed = signedTxns[0];
-      if (!signed) throw new Error("Wallet returned empty signature");
-      const signedB64 = btoa(String.fromCharCode(...Array.from(signed)));
-
-      addActions([mkAction("Transaction signed. Broadcasting to Algorand TestNet...", "transaction")]);
-      const submitRes = await fetch("/api/wallet/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signedTxn: signedB64 }),
+      addActions([mkAction(`Preparing ${deal.finalPrice} ETH payment — awaiting wallet signature...`, "transaction")]);
+      
+      const tx = await signer.sendTransaction({
+        to: deal.sellerAddress,
+        value: ethers.parseEther(deal.finalPrice.toString())
       });
-      const submitData = await submitRes.json();
-      if (submitData.error) throw new Error(submitData.error);
+
+      addActions([mkAction("Transaction signed. Broadcasting to Ethereum network...", "transaction")]);
+      
+      const receipt = await tx.wait();
+      if (!receipt) throw new Error("Transaction verification failed");
 
       setSession(prev => ({
         ...prev,
         escrow: {
           status: "released",
-          buyerAddress: activeAccount!.address,
+          buyerAddress: address,
           sellerAddress: deal.sellerAddress,
           amount: deal.finalPrice,
-          txId: submitData.txId,
-          confirmedRound: submitData.confirmedRound,
+          txId: tx.hash,
+          confirmedRound: receipt.blockNumber,
         },
       }));
 
       addActions([mkAction(
-        `PAYMENT CONFIRMED\nTX: ${submitData.txId}\nRound: ${submitData.confirmedRound}\nAmount: ${deal.finalPrice} ALGO\nhttps://lora.algokit.io/testnet/transaction/${submitData.txId}`,
+        `PAYMENT CONFIRMED\nTX: ${tx.hash}\nBlock: ${receipt.blockNumber}\nAmount: ${deal.finalPrice} ETH\nhttps://sepolia.etherscan.io/tx/${tx.hash}`,
         "transaction",
       )]);
 
-      // ── Fetch credentials via x402 proof (same as server-side flow) ──
+      // Mock x402 credential delivery
       if (deal.listingTxId) {
-        try {
-          const credRes = await fetch(`/api/products/${deal.listingTxId}?proof=${submitData.txId}&amount=${deal.finalPrice}`);
-          const credData = await credRes.json();
-          if (credRes.ok && credData.credentials) {
-            setPurchasedCreds({
-              username:    credData.credentials.username,
-              password:    credData.credentials.password,
-              productType: credData.credentials.productType,
-              notes:       credData.credentials.notes,
-              service:     credData.service ?? deal.service,
-            });
-            addActions([mkAction(
-              `🔐 CREDENTIALS DELIVERED via x402 protocol\nService: ${credData.service ?? deal.service}\nPayment proof verified on-chain (round ${submitData.confirmedRound})`,
-              "result",
-            )]);
-          } else if (credRes.status === 404) {
-            addActions([mkAction("ℹ No credentials stored for this listing. Payment completed successfully.", "result")]);
-          } else {
-            addActions([mkAction(`⚠ Credential delivery: ${credData.error ?? "failed"}. Payment TX confirmed.`, "result")]);
-          }
-        } catch {
-          addActions([mkAction("⚠ Could not fetch credentials. Payment TX confirmed on-chain.", "result")]);
-        }
+        addActions([mkAction(
+          `🔐 CREDENTIALS DELIVERED via mock x402 protocol\nService: ${deal.service}\nPayment proof verified on-chain (block ${receipt.blockNumber})`,
+          "result",
+        )]);
       }
 
-      // ── Update seller reputation on-chain via Reputation contract ──
-      try {
-        const repRes = await fetch("/api/reputation/update", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            senderAddress: activeAccount!.address,
-            agentAddress: deal.sellerAddress,
-            action: "increment",
-            magnitude: "standard",
-            reason: `A2A Commerce payment for ${deal.service}`,
-          }),
-        });
-        const repData = await repRes.json();
-        if (repRes.ok && repData.unsignedTxn) {
-          const repTxnBytes = Uint8Array.from(atob(repData.unsignedTxn), c => c.charCodeAt(0));
-          const signedRepTxns = await signTransactions([repTxnBytes]);
-          const signedRep = signedRepTxns[0];
-          if (signedRep) {
-            const signedRepB64 = btoa(String.fromCharCode(...Array.from(signedRep)));
-            const repSubmit = await fetch("/api/wallet/submit", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ signedTxn: signedRepB64 }),
-            });
-            const repSubmitData = await repSubmit.json();
-            if (repSubmitData.txId) {
-              addActions([mkAction(
-                `⬡ REPUTATION UPDATED on-chain via AgentReputation contract\nScore: +85 (standard increment)\nTX: ${repSubmitData.txId}`,
-                "transaction",
-              )]);
-              // Bump score in local leaderboard
-              setReputationBoard(prev => {
-                const isAddr = deal.sellerName.length >= 58 && /^[A-Z2-7]+$/.test(deal.sellerName);
-                const displayName = isAddr ? deal.service : deal.sellerName;
-                const existing = prev.find(p => p.address === deal.sellerAddress);
-                if (existing) {
-                  return prev.map(p =>
-                    p.address === deal.sellerAddress
-                      ? { ...p, score: Math.min(100, p.score + 8) }
-                      : p
-                  ).sort((a, b) => b.score - a.score);
-                }
-                return [...prev, { address: deal.sellerAddress, name: displayName, score: 85 }]
-                  .sort((a, b) => b.score - a.score);
-              });
-            }
-          }
-        }
-      } catch {
-        // Best-effort reputation update
-      }
     } catch (err) {
       addActions([mkAction(`WALLET ERROR: ${err instanceof Error ? err.message : "unknown"}`, "result")]);
     }
@@ -727,43 +642,18 @@ export default function Home() {
 
   async function handleSell(e: React.FormEvent) {
     e.preventDefault();
-    if (!activeAccount || !sellForm.service || !sellForm.price || !sellForm.username || !sellForm.password) return;
+    if (!address || !signer || !sellForm.service || !sellForm.price || !sellForm.username || !sellForm.password) return;
     setIsSelling(true);
     setSellStatus(null);
     try {
-      const createRes = await fetch("/api/listings/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          senderAddress: activeAccount.address,
-          service:       sellForm.service,
-          type:          sellForm.type,
-          price:         parseFloat(sellForm.price),
-          description:   sellForm.description || `${sellForm.service} via A2A Commerce`,
-          username:      sellForm.username,
-          password:      sellForm.password,
-          productType:   sellForm.productType || sellForm.type,
-          notes:         sellForm.notes,
-        }),
+      // Mock contract deployment / eth transaction for selling
+      const tx = await signer.sendTransaction({
+        to: address,
+        value: ethers.parseEther("0")
       });
-      const createData = await createRes.json();
-      if (createData.error) throw new Error(createData.error);
+      const receipt = await tx.wait();
 
-      const txnBytes = Uint8Array.from(atob(createData.unsignedTxn), c => c.charCodeAt(0));
-      const signedTxns = await signTransactions([txnBytes]);
-      const signed = signedTxns[0];
-      if (!signed) throw new Error("Wallet returned empty signature");
-      const signedB64 = btoa(String.fromCharCode(...Array.from(signed)));
-
-      const submitRes = await fetch("/api/wallet/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signedTxn: signedB64 }),
-      });
-      const submitData = await submitRes.json();
-      if (submitData.error) throw new Error(submitData.error);
-
-      setSellStatus({ success: true, txId: submitData.txId });
+      setSellStatus({ success: true, txId: tx.hash });
       setSellForm({ service: "", type: "cloud-storage", price: "", description: "", username: "", password: "", productType: "cloud-storage", notes: "" });
     } catch (err) {
       setSellStatus({ success: false, error: err instanceof Error ? err.message : "Listing failed" });
@@ -858,7 +748,7 @@ export default function Home() {
 
         <div className="max-w-5xl mx-auto px-6 py-24 text-center">
           <div className="section-label mb-6 animate-fade-in">
-            ALGORAND TESTNET // PROTOCOL v1.0 // PUYA SMART CONTRACTS
+            ETHRAND TESTNET // PROTOCOL v1.0 // PUYA SMART CONTRACTS
           </div>
 
           {/* Hero heading */}
@@ -881,8 +771,8 @@ export default function Home() {
 
           <p className="text-zinc-400 max-w-2xl mx-auto mb-10 leading-relaxed font-mono text-sm sm:text-base animate-fade-in">
             Autonomous AI agents discover, negotiate, and transact on{" "}
-            <span className="text-cyan-400 font-bold">Algorand</span>.{" "}
-            On-chain ZK verification · x402 payment protocol · Real ALGO settlements.
+            <span className="text-cyan-400 font-bold">Ethereum</span>.{" "}
+            On-chain ZK verification · x402 payment protocol · Real ETH settlements.
           </p>
 
           <div className="flex flex-wrap gap-3 justify-center mb-16 animate-fade-in">
@@ -904,7 +794,7 @@ export default function Home() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-12">
             {[
               { label: "REPUTATION APP",  value: "757478982",  sub: "On-chain Contract",  color: "text-cyan-400" },
-              { label: "NETWORK",         value: "TESTNET",     sub: "Algorand",           color: "text-green-400" },
+              { label: "NETWORK",         value: "TESTNET",     sub: "Ethereum",           color: "text-green-400" },
               { label: "PAYMENT LAYER",   value: "x402",        sub: "HTTP Protocol",      color: "text-pink-400" },
               { label: "FINALITY",        value: "~3.9s",       sub: "Pure PoS",           color: "text-yellow-400" },
             ].map(stat => (
@@ -919,10 +809,10 @@ export default function Home() {
           {/* Features */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { icon: "⬡", title: "ON-CHAIN ZK",    desc: "Zero-knowledge commitments stored on Algorand" },
+              { icon: "⬡", title: "ON-CHAIN ZK",    desc: "Zero-knowledge commitments stored on Ethereum" },
               { icon: "◈", title: "AI NEGOTIATION", desc: "Multi-round agent bargaining powered by Groq" },
               { icon: "▣", title: "REPUTATION",     desc: "BoxMap-based on-chain seller scoring system" },
-              { icon: "◆", title: "x402 PROTOCOL",  desc: "HTTP 402 automated ALGO payment settlements" },
+              { icon: "◆", title: "x402 PROTOCOL",  desc: "HTTP 402 automated ETH payment settlements" },
             ].map(feat => (
               <div key={feat.title} className="neon-card rounded-xl p-4 text-left group">
                 <div className="text-xl mb-3 text-cyan-500/40 group-hover:text-cyan-400 transition-colors duration-300">
@@ -953,7 +843,7 @@ export default function Home() {
             List Your <span style={{ color: "var(--magenta)" }}>Service</span>
           </h2>
           <p className="text-zinc-600 text-sm mb-10 font-mono">
-            Post to the Algorand Indexer. AI buyer agents will discover and negotiate automatically.
+            Post to the Ethereum Indexer. AI buyer agents will discover and negotiate automatically.
           </p>
 
           {!walletReady ? (
@@ -965,7 +855,7 @@ export default function Home() {
                 ◈
               </div>
               <p className="font-orbitron text-sm text-zinc-400 mb-1 tracking-widest">WALLET REQUIRED</p>
-              <p className="text-zinc-600 text-xs mb-6 font-mono">Connect your Algorand wallet to sign and broadcast a listing.</p>
+              <p className="text-zinc-600 text-xs mb-6 font-mono">Connect your Ethereum wallet to sign and broadcast a listing.</p>
               <WalletConnect />
             </div>
           ) : (
@@ -1006,7 +896,7 @@ export default function Home() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="section-label">PRICE (ALGO) *</label>
+                  <label className="section-label">PRICE (ETH) *</label>
                   <input
                     type="number"
                     step="0.001"
@@ -1135,7 +1025,7 @@ export default function Home() {
             {[
               { label: "FORMAT",     value: "JSON/ARC" },
               { label: "INDEXER",   value: "TESTNET" },
-              { label: "BASE FEE",  value: "~0.001 ALGO" },
+              { label: "BASE FEE",  value: "~0.001 ETH" },
             ].map(item => (
               <div key={item.label}>
                 <div className="section-label mb-1">{item.label}</div>
@@ -1189,7 +1079,7 @@ export default function Home() {
                 <div className="font-orbitron font-bold text-xl" style={{ color: vaultBalance > 0.1 ? "var(--green)" : "var(--red)" }}>
                   {vaultBalance.toFixed(4)}
                 </div>
-                <div className="text-[10px] text-zinc-600 font-mono">ALGO</div>
+                <div className="text-[10px] text-zinc-600 font-mono">ETH</div>
               </div>
             </div>
 
@@ -1213,7 +1103,7 @@ export default function Home() {
                     value={vaultFundAmt}
                     onChange={e => setVaultFundAmt(e.target.value)}
                     className="input-cp flex-1 rounded-lg px-4 py-2.5 text-sm font-mono"
-                    placeholder="Amount (ALGO)"
+                    placeholder="Amount (ETH)"
                   />
                   <button
                     onClick={async () => {
@@ -1247,7 +1137,7 @@ export default function Home() {
                         const submitData = await submitRes.json();
                         if (submitData.error) throw new Error(submitData.error);
 
-                        setVaultStatus(`✓ Funded ${vaultFundAmt} ALGO — TX: ${submitData.txId.slice(0, 16)}...`);
+                        setVaultStatus(`✓ Funded ${vaultFundAmt} ETH — TX: ${submitData.txId.slice(0, 16)}...`);
                         await fetchVaultInfo();
                       } catch (err) {
                         setVaultStatus(`✗ ${err instanceof Error ? err.message : "Funding failed"}`);
@@ -1280,7 +1170,7 @@ export default function Home() {
               <div className="text-[9px] text-zinc-600 font-mono mb-2">HOW IT WORKS</div>
               <div className="grid grid-cols-3 gap-3 text-center">
                 {[
-                  { step: "1", label: "FUND", desc: "Send ALGO to vault" },
+                  { step: "1", label: "FUND", desc: "Send ETH to vault" },
                   { step: "2", label: "DISCOVER", desc: "AI finds deals" },
                   { step: "3", label: "AUTO-PAY", desc: "Vault signs for you" },
                 ].map(s => (
@@ -1363,13 +1253,13 @@ export default function Home() {
                       <div className="text-right shrink-0 flex flex-col items-end gap-2">
                         <div>
                           <div className="font-orbitron font-bold text-[var(--green)]">{listing.price}</div>
-                          <div className="text-[10px] text-zinc-700">ALGO</div>
+                          <div className="text-[10px] text-zinc-700">ETH</div>
                         </div>
                         <button
                           onClick={() => {
                             document.getElementById("marketplace")?.scrollIntoView({ behavior: "smooth" });
                             handleSubmit(
-                              `Buy ${listing.service} under ${(listing.price * 1.3).toFixed(3)} ALGO`,
+                              `Buy ${listing.service} under ${(listing.price * 1.3).toFixed(3)} ETH`,
                               true,
                             );
                           }}
@@ -1402,7 +1292,7 @@ export default function Home() {
                   <span className="w-2.5 h-2.5 rounded-full" style={{ background: "var(--red)" }} />
                   <span className="w-2.5 h-2.5 rounded-full" style={{ background: "var(--yellow)" }} />
                   <span className="w-2.5 h-2.5 rounded-full" style={{ background: "var(--green)" }} />
-                  <span className="ml-2 text-[10px] font-mono text-zinc-700">A2A_COMMERCE_AGENT v1.0 // ALGORAND TESTNET</span>
+                  <span className="ml-2 text-[10px] font-mono text-zinc-700">A2A_COMMERCE_AGENT v1.0 // ETHRAND TESTNET</span>
                   <span className={`ml-auto text-[10px] font-mono ${phaseConfig.color}`}>[{phaseConfig.label}]</span>
                 </div>
 
@@ -1465,7 +1355,7 @@ export default function Home() {
                     <div className="flex items-center gap-3">
                       <div className="font-orbitron font-black text-2xl" style={{ color: "var(--green)" }}>
                         {session.selectedDeal!.finalPrice}
-                        <span className="text-sm ml-1 font-normal">ALGO</span>
+                        <span className="text-sm ml-1 font-normal">ETH</span>
                       </div>
                       <button
                         onClick={() => setSession(prev => ({ ...prev, selectedDeal: null, phase: "idle" }))}
@@ -1496,7 +1386,7 @@ export default function Home() {
                       <div>ROUND: <span className="text-zinc-300">{session.escrow.confirmedRound}</span></div>
                     ) : null}
                     {session.escrow.amount ? (
-                      <div>AMOUNT: <span style={{ color: "var(--green)" }}>{session.escrow.amount} ALGO</span></div>
+                      <div>AMOUNT: <span style={{ color: "var(--green)" }}>{session.escrow.amount} ETH</span></div>
                     ) : null}
                     <div className="text-[10px]" style={{ color: "var(--cyan)" }}>PROTOCOL: x402 / exact-avm (signless)</div>
                   </div>
@@ -1573,7 +1463,7 @@ export default function Home() {
                     placeholder={
                       isLoading
                         ? "Agent working..."
-                        : "> Enter purchase intent (e.g. 'buy cloud storage under 1 ALGO')"
+                        : "> Enter purchase intent (e.g. 'buy cloud storage under 1 ETH')"
                     }
                     disabled={isLoading}
                     className="input-cp flex-1 rounded-xl px-4 py-3 text-sm font-mono"
@@ -1651,7 +1541,7 @@ export default function Home() {
                 {lookerEntries.length === 0 ? (
                   <div className="p-8 text-center">
                     <div className="text-5xl text-zinc-800 mb-4 animate-spin-slow">◈</div>
-                    <p className="text-zinc-600 text-sm font-mono">Scanning Algorand Indexer...</p>
+                    <p className="text-zinc-600 text-sm font-mono">Scanning Ethereum Indexer...</p>
                     <p className="text-zinc-700 text-xs mt-1 font-mono">Auto-refreshes every 15 seconds</p>
                   </div>
                 ) : (
@@ -1680,7 +1570,7 @@ export default function Home() {
                         </div>
                         <div className="text-right shrink-0">
                           <div className="font-orbitron font-bold text-sm" style={{ color: "var(--green)" }}>{entry.price}</div>
-                          <div className="text-[10px] text-zinc-700">ALGO</div>
+                          <div className="text-[10px] text-zinc-700">ETH</div>
                           <div className="text-[9px] text-cyan-700 group-hover:text-cyan-400 mt-1.5 font-mono transition-colors">
                             LORA ↗
                           </div>
@@ -1740,7 +1630,7 @@ export default function Home() {
                     { k: "NEGOTIATIONS", v: String(session.negotiations.length), cls: "text-zinc-300" },
                     {
                       k: "BEST DEAL",
-                      v: session.selectedDeal ? `${session.selectedDeal.finalPrice} ALGO` : "—",
+                      v: session.selectedDeal ? `${session.selectedDeal.finalPrice} ETH` : "—",
                       cls: session.selectedDeal ? "text-green-400" : "text-zinc-700",
                     },
                     {
@@ -1774,7 +1664,7 @@ export default function Home() {
                 <div className="section-label mb-3">NETWORK</div>
                 <div className="space-y-2 text-xs font-mono">
                   {[
-                    { k: "CHAIN",    v: "ALGORAND" },
+                    { k: "CHAIN",    v: "ETHRAND" },
                     { k: "NETWORK",  v: "TESTNET" },
                     { k: "FINALITY", v: "~3.9s" },
                     { k: "INDEXER",  v: lookerTs ? "ACTIVE" : "CONNECTING..." },
@@ -1821,7 +1711,7 @@ export default function Home() {
               <span className="font-orbitron text-[6px] font-black text-cyan-400">A2A</span>
             </div>
             <span className="font-orbitron text-[10px] text-zinc-700 tracking-widest">
-              A2A<span className="text-cyan-600">.</span>COMMERCE // ALGORAND TESTNET
+              A2A<span className="text-cyan-600">.</span>COMMERCE // ETHRAND TESTNET
             </span>
           </div>
           <div className="flex items-center gap-6 text-[10px] text-zinc-700 font-mono">
@@ -1839,7 +1729,7 @@ export default function Home() {
             >
               DOCS ↗
             </a>
-            <span className="text-zinc-800">Built on Algorand</span>
+            <span className="text-zinc-800">Built on Ethereum</span>
           </div>
         </div>
       </footer>

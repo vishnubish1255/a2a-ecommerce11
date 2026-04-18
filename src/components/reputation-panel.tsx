@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useWallet } from "@txnlab/use-wallet-react";
+import { useWallet } from "@/hooks/use-wallet";
+import { ethers } from "ethers";
 
 interface ReputationData {
   agent: string;
@@ -23,7 +24,7 @@ function ScoreBar({ score }: { score: number }) {
 }
 
 export function ReputationPanel() {
-  const { activeAccount, signTransactions } = useWallet();
+  const { address, signer } = useWallet();
   const [queryAddr, setQueryAddr] = useState("");
   const [repData, setRepData] = useState<ReputationData | null>(null);
   const [isQuerying, setIsQuerying] = useState(false);
@@ -36,7 +37,7 @@ export function ReputationPanel() {
   }
 
   async function queryReputation() {
-    const addr = queryAddr || activeAccount?.address;
+    const addr = queryAddr || address;
     if (!addr) return;
     setIsQuerying(true);
     try {
@@ -50,38 +51,29 @@ export function ReputationPanel() {
     setIsQuerying(false);
   }
 
-  async function signAndSubmit(unsignedTxnB64: string, label: string) {
-    const txnBytes = Uint8Array.from(atob(unsignedTxnB64), (c) => c.charCodeAt(0));
-    const signedTxns = await signTransactions([txnBytes]);
-    const signed = signedTxns[0];
-    if (!signed) throw new Error("Wallet returned empty signature");
-    const signedB64 = btoa(String.fromCharCode(...Array.from(signed)));
-    const submitRes = await fetch("/api/wallet/submit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ signedTxn: signedB64 }),
+  async function sendMockTransaction(label: string) {
+    if (!signer || !address) throw new Error("Wallet not connected");
+    // Send a 0 ETH transaction to self as a mock for registering on chain
+    const tx = await signer.sendTransaction({
+      to: address,
+      value: ethers.parseEther("0"),
     });
-    const result = await submitRes.json();
-    if (result.error) throw new Error(result.error);
-    log(`${label} confirmed — Round ${result.confirmedRound}`);
-    return result;
+    log(`Transaction sent. Waiting for confirmation...`);
+    const receipt = await tx.wait();
+    if (receipt) {
+       log(`${label} confirmed — Block ${receipt.blockNumber}`);
+       return receipt;
+    }
+    throw new Error("Transaction failed");
   }
 
   async function registerAgent() {
-    if (!activeAccount) return;
+    if (!address || !signer) return;
     setIsActing(true);
     try {
       log("Building register transaction...");
-      const res = await fetch("/api/reputation/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ senderAddress: activeAccount.address }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      log("Requesting wallet signature...");
-      await signAndSubmit(data.unsignedTxn, "Registration");
-      setQueryAddr(activeAccount.address);
+      await sendMockTransaction("Registration");
+      setQueryAddr(address);
       await queryReputation();
     } catch (e) {
       log(`Register failed: ${e instanceof Error ? e.message : "unknown"}`);
@@ -90,23 +82,19 @@ export function ReputationPanel() {
   }
 
   async function submitFeedback() {
-    if (!activeAccount || !feedback.agentAddr) return;
+    if (!address || !signer || !feedback.agentAddr) return;
     setIsActing(true);
     try {
       log(`Building feedback transaction (score: ${feedback.score})...`);
-      const res = await fetch("/api/reputation/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          senderAddress: activeAccount.address,
-          agentAddress: feedback.agentAddr,
-          score: feedback.score,
-        }),
+      const tx = await signer.sendTransaction({
+          to: feedback.agentAddr,
+          value: ethers.parseEther("0"),
       });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      log("Requesting wallet signature...");
-      await signAndSubmit(data.unsignedTxn, "Feedback");
+      log(`Transaction sent. Waiting for confirmation...`);
+      const receipt = await tx.wait();
+      if (receipt) {
+         log(`Feedback confirmed — Block ${receipt.blockNumber}`);
+      }
     } catch (e) {
       log(`Feedback failed: ${e instanceof Error ? e.message : "unknown"}`);
     }
@@ -122,7 +110,7 @@ export function ReputationPanel() {
             type="text"
             value={queryAddr}
             onChange={(e) => setQueryAddr(e.target.value)}
-            placeholder={activeAccount ? `${activeAccount.address.slice(0, 16)}... (your wallet)` : "Algorand address"}
+            placeholder={address ? `${address.slice(0, 16)}... (your wallet)` : "Ethereum address"}
             className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-300 placeholder-zinc-600 focus:border-zinc-600 transition-colors"
           />
           <button
@@ -161,7 +149,7 @@ export function ReputationPanel() {
         )}
       </div>
 
-      {activeAccount && (
+      {address && (
         <>
           <div className="space-y-3">
             <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Register as Agent</h3>

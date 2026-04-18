@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { AlgorandWalletProvider } from "@/components/wallet-provider";
+import { WalletProvider } from "@/hooks/use-wallet";
 
 export const metadata: Metadata = {
   title: "A2A // Agentic Commerce",
-  description: "Autonomous AI agents discover, negotiate, and transact on Algorand. On-chain ZK · x402 protocol · Real ALGO.",
+  description: "Autonomous AI agents discover, negotiate, and transact on Ethereum. On-chain ZK · x402 protocol · Real ETH.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -19,7 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="antialiased min-h-screen scanlines">
-        <AlgorandWalletProvider>{children}</AlgorandWalletProvider>
+        <WalletProvider>{children}</WalletProvider>
       </body>
     </html>
   );
