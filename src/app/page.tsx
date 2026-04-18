@@ -192,7 +192,7 @@ export default function Home() {
   // Vault
   const [vaultAddress, setVaultAddress] = useState("");
   const [vaultBalance, setVaultBalance] = useState(0);
-  const [vaultFundAmt, setVaultFundAmt] = useState("");
+  const [vaultFundAmt, setVaultFundAmt] = useState("2");
   const [isVaultFunding, setIsVaultFunding] = useState(false);
   const [vaultStatus, setVaultStatus] = useState<string | null>(null);
 
@@ -708,24 +708,12 @@ export default function Home() {
                   <a
                     key={sec}
                     href={`#${sec.toLowerCase()}`}
-                    onClick={() => setActiveSection(sec.toLowerCase())}
-                    className="relative px-3 py-5 group"
+                    className={`px-3 py-5 text-[10px] font-orbitron tracking-[0.15em] border-b-2 transition-all ${isActive
+                      ? "text-cyan-400 border-cyan-400"
+                      : "text-zinc-600 border-transparent hover:text-zinc-300 hover:border-zinc-700"
+                      }`}
                   >
-                    <span
-                      className={`text-[10px] font-orbitron tracking-[0.15em] transition-colors duration-200 ${
-                        isActive ? "text-cyan-400" : "text-zinc-600 group-hover:text-zinc-200"
-                      }`}
-                    >
-                      {sec}
-                    </span>
-                    {/* Stable underline — scales on hover, always visible as a line */}
-                    <span
-                      className={`absolute bottom-0 left-0 h-0.5 w-full transition-all duration-200 origin-center ${
-                        isActive
-                          ? "bg-cyan-400 scale-x-100"
-                          : "bg-zinc-700 scale-x-0 group-hover:scale-x-100"
-                      }`}
-                    />
+                    {sec}
                   </a>
                 );
               })}
@@ -1063,40 +1051,22 @@ export default function Home() {
               Fund this wallet and AI agents will auto-sign payments &amp; reputation updates — zero popups.
             </p>
 
-            {/* ── Vault card ── */}
-            <div
-              className="rounded-2xl p-7 space-y-6"
-              style={{
-                background: "rgba(5, 15, 30, 0.92)",
-                border: "1px solid rgba(0,229,255,0.15)",
-                boxShadow: "0 0 40px rgba(0,229,255,0.05), inset 0 1px 0 rgba(255,255,255,0.03)",
-              }}
-            >
-              {/* ── Vault address row ── */}
-              <div className="flex items-center gap-4 pb-5" style={{ borderBottom: "1px solid rgba(0,229,255,0.1)" }}>
-                {/* Hexagon icon */}
-                <div
-                  className="w-14 h-14 flex items-center justify-center shrink-0 text-2xl"
-                  style={{
-                    background: "rgba(0,229,255,0.07)",
-                    border: "1.5px solid rgba(0,229,255,0.3)",
-                    borderRadius: "14px",
-                    boxShadow: "0 0 16px rgba(0,229,255,0.08)",
-                  }}
-                >
+            <div className="neon-card rounded-2xl p-6 space-y-5">
+              {/* Vault address */}
+              <div className="flex items-center gap-3 pb-4 border-b border-[var(--border)]">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg" style={{ background: "rgba(0,229,255,0.08)", border: "1px solid rgba(0,229,255,0.2)" }}>
                   ⬡
                 </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="text-[10px] text-zinc-500 font-mono tracking-widest mb-1">VAULT ADDRESS</div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[9px] text-zinc-600 font-mono mb-0.5">VAULT ADDRESS</div>
                   {vaultAddress ? (
                     <div className="flex items-center gap-2">
                       <a
-                        href={`https://sepolia.etherscan.io/address/${vaultAddress}`}
+                        href={`https://lora.algokit.io/testnet/account/${vaultAddress}`}
                         target="_blank" rel="noopener noreferrer"
-                        className="text-zinc-300 text-sm font-mono hover:text-cyan-300 transition-colors underline"
+                        className="text-[11px] text-cyan-500 hover:text-cyan-300 font-mono transition-colors underline break-all"
                       >
-                        {vaultAddress.slice(0, 14)}...{vaultAddress.slice(-8)}
+                        {vaultAddress.slice(0, 12)}...{vaultAddress.slice(-8)}
                       </a>
                       <button
                         onClick={() => navigator.clipboard.writeText(vaultAddress)}
@@ -1106,60 +1076,38 @@ export default function Home() {
                       </button>
                     </div>
                   ) : (
-                    <span className="text-zinc-500 text-sm font-mono">Not configured</span>
+                    <span className="text-zinc-700 text-xs font-mono">Not configured</span>
                   )}
                 </div>
-
-                {/* Balance */}
                 <div className="text-right shrink-0">
-                  <div
-                    className="font-orbitron font-black text-3xl leading-none"
-                    style={{
-                      color: vaultBalance > 0.1 ? "#00ff88" : "#ff4444",
-                      textShadow: vaultBalance > 0.1 ? "0 0 20px rgba(0,255,136,0.4)" : "none",
-                      letterSpacing: "0.05em",
-                    }}
-                  >
+                  <div className="font-orbitron font-bold text-xl" style={{ color: vaultBalance > 0.1 ? "var(--green)" : "var(--red)" }}>
                     {vaultBalance.toFixed(4)}
                   </div>
-                  <div className="text-[11px] text-zinc-500 font-mono mt-1 tracking-widest">ETH</div>
+                  <div className="text-[10px] text-zinc-600 font-mono">ETH</div>
                 </div>
               </div>
 
-              {/* ── Status ── */}
-              <div className="flex items-center gap-2.5">
-                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${vaultBalance > 0.1 ? "bg-green-400 animate-pulse" : "bg-zinc-700"}`} />
-                <span className={`text-[11px] font-mono font-medium ${vaultBalance > 0.1 ? "text-green-400" : "text-zinc-500"}`}>
+              {/* Status indicator */}
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${vaultBalance > 0.1 ? "bg-green-500 animate-pulse" : "bg-zinc-700"}`} />
+                <span className={`text-[10px] font-mono ${vaultBalance > 0.1 ? "text-green-400" : "text-zinc-600"}`}>
                   {vaultBalance > 0.1 ? "VAULT ACTIVE — agents will auto-sign" : "VAULT EMPTY — fund to enable auto-sign"}
                 </span>
               </div>
 
-              {/* ── Fund vault ── */}
+              {/* Fund vault */}
               {walletReady ? (
-                <div className="space-y-4">
-                  <div
-                    className="text-[11px] font-mono tracking-[0.2em]"
-                    style={{ color: "rgba(0,229,255,0.7)" }}
-                  >
-                    FUND VAULT FROM WALLET
-                  </div>
-
-                  {/* Full-width input + button row */}
-                  <div className="flex gap-3">
+                <div className="space-y-3">
+                  <div className="section-label">FUND VAULT FROM WALLET</div>
+                  <div className="flex gap-2">
                     <input
                       type="number"
                       step="0.1"
                       min="0.1"
                       value={vaultFundAmt}
                       onChange={e => setVaultFundAmt(e.target.value)}
+                      className="input-cp flex-1 rounded-lg px-4 py-2.5 text-sm font-mono"
                       placeholder="Amount (ETH)"
-                      className="flex-1 rounded-xl px-5 py-3.5 text-sm font-mono text-zinc-300 placeholder-zinc-600 outline-none transition-all"
-                      style={{
-                        background: "rgba(0,229,255,0.04)",
-                        border: "1px solid rgba(0,229,255,0.18)",
-                      }}
-                      onFocus={e => (e.currentTarget.style.borderColor = "rgba(0,229,255,0.5)")}
-                      onBlur={e => (e.currentTarget.style.borderColor = "rgba(0,229,255,0.18)")}
                     />
                     <button
                       onClick={async () => {
@@ -1178,7 +1126,22 @@ export default function Home() {
                           });
                           const fundData = await fundRes.json();
                           if (fundData.error) throw new Error(fundData.error);
-                          setVaultStatus(`✓ Funded ${vaultFundAmt} ETH`);
+
+                          const txnBytes = Uint8Array.from(atob(fundData.unsignedTxn), c => c.charCodeAt(0));
+                          const signedTxns = await signTransactions([txnBytes]);
+                          const signed = signedTxns[0];
+                          if (!signed) throw new Error("Wallet returned empty signature");
+                          const signedB64 = btoa(String.fromCharCode(...Array.from(signed)));
+
+                          const submitRes = await fetch("/api/wallet/submit", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ signedTxn: signedB64 }),
+                          });
+                          const submitData = await submitRes.json();
+                          if (submitData.error) throw new Error(submitData.error);
+
+                          setVaultStatus(`✓ Funded ${vaultFundAmt} ETH — TX: ${submitData.txId.slice(0, 16)}...`);
                           await fetchVaultInfo();
                         } catch (err) {
                           setVaultStatus(`✗ ${err instanceof Error ? err.message : "Funding failed"}`);
@@ -1186,52 +1149,38 @@ export default function Home() {
                         setIsVaultFunding(false);
                       }}
                       disabled={isVaultFunding || !vaultFundAmt || parseFloat(vaultFundAmt) < 0.1}
-                      className="px-8 py-3.5 text-[11px] font-orbitron font-bold tracking-[0.15em] rounded-xl shrink-0 transition-all disabled:opacity-40"
-                      style={{
-                        background: "rgba(0,229,255,0.12)",
-                        border: "1px solid rgba(0,229,255,0.35)",
-                        color: "rgba(0,229,255,0.9)",
-                        boxShadow: "0 0 20px rgba(0,229,255,0.08)",
-                      }}
-                      onMouseEnter={e => {
-                        (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,229,255,0.22)";
-                        (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 0 30px rgba(0,229,255,0.18)";
-                      }}
-                      onMouseLeave={e => {
-                        (e.currentTarget as HTMLButtonElement).style.background = "rgba(0,229,255,0.12)";
-                        (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 0 20px rgba(0,229,255,0.08)";
-                      }}
+                      className="btn-solid-cyan px-6 py-2.5 text-xs font-orbitron tracking-widest rounded-lg disabled:opacity-40"
                     >
                       {isVaultFunding ? "SIGNING..." : "FUND VAULT"}
                     </button>
                   </div>
-
                   {vaultStatus && (
-                    <div className={`text-[10px] font-mono ${vaultStatus.startsWith("✓") ? "text-green-400" : "text-red-400"}`}>
+                    <div className={`text-[10px] font-mono ${vaultStatus.startsWith("✓") ? "text-green-400" : "text-red-400"
+                      }`}>
                       {vaultStatus}
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="text-center py-4">
-                  <p className="text-zinc-600 text-xs font-mono mb-4">Connect wallet to fund the vault</p>
+                <div className="text-center py-3">
+                  <p className="text-zinc-600 text-xs font-mono mb-3">Connect wallet to fund the vault</p>
                   <WalletConnect />
                 </div>
               )}
 
-              {/* ── How it works ── */}
-              <div className="pt-5" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                <div className="text-[10px] text-zinc-600 font-mono tracking-widest mb-5">HOW IT WORKS</div>
+              {/* How it works */}
+              <div className="pt-3 border-t border-[var(--border)]">
+                <div className="text-[9px] text-zinc-600 font-mono mb-2">HOW IT WORKS</div>
                 <div className="grid grid-cols-3 gap-3 text-center">
                   {[
                     { step: "1", label: "FUND", desc: "Send ETH to vault" },
                     { step: "2", label: "DISCOVER", desc: "AI finds deals" },
                     { step: "3", label: "AUTO-PAY", desc: "Vault signs for you" },
                   ].map(s => (
-                    <div key={s.step} className="py-1">
-                      <div className="font-orbitron font-bold text-base mb-2" style={{ color: "rgba(0,229,255,0.7)" }}>{s.step}</div>
-                      <div className="text-zinc-200 text-[11px] font-mono font-bold tracking-widest mb-1">{s.label}</div>
-                      <div className="text-zinc-600 text-[10px] font-mono">{s.desc}</div>
+                    <div key={s.step} className="py-2">
+                      <div className="text-cyan-500 font-orbitron text-xs mb-1">{s.step}</div>
+                      <div className="text-zinc-300 text-[10px] font-mono font-bold">{s.label}</div>
+                      <div className="text-zinc-700 text-[9px] font-mono">{s.desc}</div>
                     </div>
                   ))}
                 </div>
@@ -1762,8 +1711,13 @@ export default function Home() {
               >
                 <span className="font-orbitron text-[6px] font-black text-cyan-400">A2A</span>
               </div>
-              <span className="font-orbitron text-[10px] text-zinc-700 tracking-widest">
-                A2A<span className="text-cyan-600">.</span>COMMERCE // ETHRAND TESTNET
+              <span
+                className="text-[11px] text-zinc-500 tracking-wide"
+                style={{ fontFamily: "'Syne', sans-serif" }}
+              >
+                A2A<span className="text-cyan-600 mx-0.5">·</span>TrustMesh
+                <span className="text-cyan-600 ml-1 text-[9px]" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>AI</span>
+                <span className="text-zinc-700 ml-2 font-mono text-[9px]">// ETHEREUM TESTNET</span>
               </span>
             </div>
             <div className="flex items-center gap-6 text-[10px] text-zinc-700 font-mono">
