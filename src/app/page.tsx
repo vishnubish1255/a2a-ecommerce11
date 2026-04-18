@@ -671,11 +671,14 @@ export default function Home() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] relative">
+    <div className="min-h-screen relative" style={{ background: "transparent" }}>
       {/* ─── SCANLINE is on body via className="scanlines" ─── */}
 
       {/* ═══════════════════════════════════════════════════ SCROLL ANIMATION ══ */}
       <ScrollAnimation />
+
+      {/* All content sits above canvas + overlay */}
+      <div className="relative" style={{ zIndex: 2 }}>
 
       {/* ═══════════════════════════════════════════════════════ NAV ══════════ */}
       <nav className="fixed top-0 inset-x-0 z-50 glass border-b border-[var(--border)]">
@@ -737,7 +740,7 @@ export default function Home() {
       </nav>
 
       {/* ═══════════════════════════════════════════════════ OVERVIEW ═════════ */}
-      <section id="overview" className="min-h-screen pt-14 flex flex-col justify-center relative overflow-hidden grid-bg">
+      <section id="overview" className="min-h-screen pt-14 flex flex-col justify-center relative overflow-hidden grid-bg" style={{ background: "transparent" }}>
 
         {/* Corner brackets */}
         <div className="absolute top-20 left-6 w-10 h-10 border-l-2 border-t-2 border-cyan-500/25 pointer-events-none" />
@@ -1731,6 +1734,8 @@ export default function Home() {
           </div>
         </div>
       </footer>
+      </div>
+      </div>
     </div>
   );
 }
